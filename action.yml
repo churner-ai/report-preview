@@ -1,0 +1,116 @@
+name: Report preview to Churner
+description: >-
+  Post one preview-environment state change (building / ready / failed /
+  destroyed) to Churner's preview contract, so the churn agent and the
+  tracker read where a per-PR preview is instead of a URL somebody typed
+  into a prompt.
+author: Churner
+
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  token:
+    description: >-
+      The project's PREVIEW token — minted once in the project's Access
+      settings and stored as a repository secret. Not an API token and not
+      a personal one: it reaches exactly this one route for exactly this
+      one project.
+    required: true
+  project:
+    description: The Churner project key (e.g. `MC`).
+    required: true
+  type:
+    description: One of `building`, `ready`, `failed`, `destroyed`.
+    required: true
+  pr:
+    description: >-
+      Pull-request number. Usually `${{ github.event.number }}` (or
+      `${{ github.event.pull_request.number }}`).
+    required: true
+  sha:
+    description: >-
+      The head commit the preview was built from, 7-64 hex characters.
+      Usually `${{ github.event.pull_request.head.sha }}` — NOT
+      `github.sha`, which on a `pull_request` event is the merge commit and
+      would key the record to a commit no branch carries.
+    required: true
+  url:
+    description: >-
+      Where the preview answers. Required on `ready`; https only, and no
+      credentials in the authority. Ignored by every other type.
+    required: false
+    default: ''
+  health-path:
+    description: >-
+      Rooted path a health check hits under `url` (e.g. `/api/health`).
+      Defaults to `/` at rest.
+    required: false
+    default: ''
+  expires-in:
+    description: >-
+      How long the preview is expected to live, as a duration — `48h`,
+      `90m`, `7d`, `3600`. Sent as an absolute `expiresAt` instant, because
+      a record read tomorrow has to say WHEN the preview goes away.
+    required: false
+    default: ''
+  build-log-url:
+    description: >-
+      Where the build log for this attempt can be read. Usually
+      `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`.
+    required: false
+    default: ''
+  error:
+    description: >-
+      Why a `failed` failed. Truncated at 2000 characters by the contract,
+      never refused — losing the one event that says the build broke would
+      be the worst possible trade.
+    required: false
+    default: ''
+  tracker-url:
+    description: >-
+      Base URL of the Churner instance. Must be https — the preview token
+      rides in a header on every request — unless the host is loopback.
+    required: false
+    default: 'https://churner.ai'
+  max-attempts:
+    description: >-
+      How many times to try before failing the step. Only 429 / 5xx /
+      network failures are retried; 400, 401 and 409 fail on the first
+      response.
+    required: false
+    default: '5'
+  backoff-seconds:
+    description: >-
+      Base of the exponential backoff between retries, in seconds. Any
+      single wait — including one a `Retry-After` header asks for — is
+      clamped at 60s.
+    required: false
+    default: '1'
+
+runs:
+  using: composite
+  steps:
+    # The program lives in `report-preview.sh` rather than inline here: a
+    # shell body embedded in YAML can only be tested by re-parsing the
+    # YAML, and a test that re-derives the thing under test is testing its
+    # own parser. Inputs cross into it as ENVIRONMENT, never as arguments —
+    # `token` is a credential, and an argument is visible in `ps` to every
+    # other process on the runner.
+    - shell: bash
+      env:
+        REPORT_PREVIEW_TRACKER_URL: ${{ inputs.tracker-url }}
+        REPORT_PREVIEW_TOKEN: ${{ inputs.token }}
+        REPORT_PREVIEW_PROJECT: ${{ inputs.project }}
+        REPORT_PREVIEW_TYPE: ${{ inputs.type }}
+        REPORT_PREVIEW_PR: ${{ inputs.pr }}
+        REPORT_PREVIEW_SHA: ${{ inputs.sha }}
+        REPORT_PREVIEW_URL: ${{ inputs.url }}
+        REPORT_PREVIEW_HEALTH_PATH: ${{ inputs.health-path }}
+        REPORT_PREVIEW_EXPIRES_IN: ${{ inputs.expires-in }}
+        REPORT_PREVIEW_BUILD_LOG_URL: ${{ inputs.build-log-url }}
+        REPORT_PREVIEW_ERROR: ${{ inputs.error }}
+        REPORT_PREVIEW_MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        REPORT_PREVIEW_BACKOFF_BASE_SECONDS: ${{ inputs.backoff-seconds }}
+      run: bash "$GITHUB_ACTION_PATH/report-preview.sh"
