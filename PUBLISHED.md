@@ -7,4 +7,4 @@ release overwrites the file, and the change would never have run against the
 action's test suite (which executes `report-preview.sh` against a stub of
 the tracker's own events route).
 
-Released from churner monorepo commit `a5a6fa2`.
+Released from churner monorepo commit `1905605`.

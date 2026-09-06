@@ -28,12 +28,12 @@ previous one — which is how you rotate it.
 | `token` | yes | — | The project's preview token, from a repository secret. |
 | `project` | yes | — | Churner project key, e.g. `MC`. |
 | `type` | yes | — | `building` \| `ready` \| `failed` \| `destroyed`. |
-| `pr` | yes | — | Pull-request number. |
-| `sha` | yes | — | Head commit the preview was built from, 7-64 hex chars. |
+| `pr` | on a non-PR event | the event's PR number | Pull-request number. Inferred from `github.event.pull_request.number`. |
+| `sha` | on a non-PR event | the event's head commit | Head commit the preview was built from, 7-64 hex chars. Inferred from `github.event.pull_request.head.sha`. |
 | `url` | on `ready` | `''` | Where the preview answers. https only, no credentials in the authority. |
 | `health-path` | no | `''` | Rooted path a health check hits under `url`, e.g. `/api/health`. Defaults to `/` at rest. |
 | `expires-in` | no | `''` | How long the preview is expected to live — `48h`, `90m`, `7d`, `30s`. Sent as an absolute `expiresAt`. **The unit suffix is required**; see below. |
-| `build-log-url` | no | `''` | Where this attempt's build log can be read. |
+| `build-log-url` | no | this workflow run's page | Where this attempt's build log can be read. |
 | `error` | no | `''` | Why a `failed` failed. Truncated at 2000 chars by the contract, never refused. |
 | `tracker-url` | no | `https://churner.ai` | Base URL of the Churner instance. Must be **https** unless the host is loopback. |
 | `max-attempts` | no | `5` | Tries before the step fails. Only 429 / 5xx / network failures are retried. |
@@ -59,7 +59,24 @@ is no network to intercept. A host that merely *starts* with `localhost` —
 On a `pull_request` event `github.sha` is the **merge** commit — a commit no
 branch carries. `(project, pr, sha)` is the record's identity, so keying on
 the merge commit would file every report under a commit nobody can check
-out. Use `github.event.pull_request.head.sha`.
+out. The inferred default is `github.event.pull_request.head.sha`, which is
+the right one; if you pass `sha` yourself, pass that and not `github.sha`.
+
+### `pr`, `sha` and `build-log-url` are inferred
+
+On a `pull_request` event you do not have to pass them — the action reads
+them from the event and from the run it is executing in. Pass them
+explicitly on **any other trigger** (`push`, `workflow_dispatch`,
+`repository_dispatch`, a reusable workflow called from one), because those
+events carry no pull request and the inference resolves to nothing. It then
+fails loudly, naming the input, rather than posting a record keyed on an
+empty commit:
+
+```
+report-preview: input 'pr' is required (the pull-request number)
+```
+
+Anything you pass explicitly always wins over the inferred value.
 
 ## The four-step workflow
 
@@ -88,9 +105,6 @@ jobs:
           token: ${{ secrets.CHURNER_PREVIEW_TOKEN }}
           project: MC
           type: building
-          pr: ${{ github.event.number }}
-          sha: ${{ github.event.pull_request.head.sha }}
-          build-log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - id: deploy
         run: ./scripts/deploy-preview.sh    # sets steps.deploy.outputs.url
@@ -111,12 +125,9 @@ jobs:
           token: ${{ secrets.CHURNER_PREVIEW_TOKEN }}
           project: MC
           type: ready
-          pr: ${{ github.event.number }}
-          sha: ${{ github.event.pull_request.head.sha }}
           url: ${{ steps.deploy.outputs.url }}
           health-path: /api/health
           expires-in: 48h
-          build-log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       # 3. failed — on ANY earlier failure. `if: failure()` is what makes
       #    the record say "the build broke" instead of sitting at
@@ -127,10 +138,7 @@ jobs:
           token: ${{ secrets.CHURNER_PREVIEW_TOKEN }}
           project: MC
           type: failed
-          pr: ${{ github.event.number }}
-          sha: ${{ github.event.pull_request.head.sha }}
           error: Preview build failed — see the build log.
-          build-log-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   # 4. destroyed — on PR close, in its own job so it runs whether the PR
   #    merged or was abandoned.
@@ -146,8 +154,6 @@ jobs:
           token: ${{ secrets.CHURNER_PREVIEW_TOKEN }}
           project: MC
           type: destroyed
-          pr: ${{ github.event.number }}
-          sha: ${{ github.event.pull_request.head.sha }}
 ```
 
 ## What the action does about each response

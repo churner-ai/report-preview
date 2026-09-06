@@ -10,6 +10,17 @@ branding:
   icon: upload-cloud
   color: blue
 
+# NOTE ON EXPRESSIONS: every expression in this file — anything in the
+# dollar-double-brace form — is scanned when the action is LOADED, before
+# any step runs, and that includes the ones inside an input's `description`
+# or `default`. At that point only a handful of contexts exist and `github`
+# is not among them, so an expression naming it out here is not a stale
+# value, it is a hard load failure of the entire calling workflow:
+#   Unrecognized named-value: 'github'
+# Expressions over `github` therefore live in exactly ONE place, the step's
+# `env:` below. Prose in a description names a context path bare
+# (`github.sha`), never wrapped in expression delimiters — a description is
+# a value, and a value is evaluated.
 inputs:
   token:
     description: >-
@@ -26,16 +37,19 @@ inputs:
     required: true
   pr:
     description: >-
-      Pull-request number. Usually `${{ github.event.number }}` (or
-      `${{ github.event.pull_request.number }}`).
-    required: true
+      Pull-request number. Optional on a `pull_request` event, where it
+      falls back to `github.event.pull_request.number`; pass it explicitly
+      on any other event, which carries no pull request to read it from.
+    required: false
+    default: ''
   sha:
     description: >-
       The head commit the preview was built from, 7-64 hex characters.
-      Usually `${{ github.event.pull_request.head.sha }}` — NOT
-      `github.sha`, which on a `pull_request` event is the merge commit and
-      would key the record to a commit no branch carries.
-    required: true
+      Falls back to `github.event.pull_request.head.sha` — NOT `github.sha`,
+      which on a `pull_request` event is the merge commit and would key the
+      record to a commit no branch carries.
+    required: false
+    default: ''
   url:
     description: >-
       Where the preview answers. Required on `ready`; https only, and no
@@ -57,8 +71,9 @@ inputs:
     default: ''
   build-log-url:
     description: >-
-      Where the build log for this attempt can be read. Usually
-      `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`.
+      Where the build log for this attempt can be read. Falls back to this
+      workflow run's own page, composed from `github.server_url`,
+      `github.repository` and `github.run_id`.
     required: false
     default: ''
   error:
@@ -98,18 +113,25 @@ runs:
     # own parser. Inputs cross into it as ENVIRONMENT, never as arguments —
     # `token` is a credential, and an argument is visible in `ps` to every
     # other process on the runner.
+    #
+    # `pr`, `sha` and `build-log-url` resolve HERE, where the `github`
+    # context exists, rather than as input defaults, where it does not. An
+    # event carrying no pull request resolves the first two to empty and the
+    # script then refuses by name — a loud, specific failure, which is the
+    # point: the fallback is a convenience for the common event, never a
+    # guess at what the caller meant on an uncommon one.
     - shell: bash
       env:
         REPORT_PREVIEW_TRACKER_URL: ${{ inputs.tracker-url }}
         REPORT_PREVIEW_TOKEN: ${{ inputs.token }}
         REPORT_PREVIEW_PROJECT: ${{ inputs.project }}
         REPORT_PREVIEW_TYPE: ${{ inputs.type }}
-        REPORT_PREVIEW_PR: ${{ inputs.pr }}
-        REPORT_PREVIEW_SHA: ${{ inputs.sha }}
+        REPORT_PREVIEW_PR: ${{ inputs.pr != '' && inputs.pr || github.event.pull_request.number }}
+        REPORT_PREVIEW_SHA: ${{ inputs.sha != '' && inputs.sha || github.event.pull_request.head.sha }}
         REPORT_PREVIEW_URL: ${{ inputs.url }}
         REPORT_PREVIEW_HEALTH_PATH: ${{ inputs.health-path }}
         REPORT_PREVIEW_EXPIRES_IN: ${{ inputs.expires-in }}
-        REPORT_PREVIEW_BUILD_LOG_URL: ${{ inputs.build-log-url }}
+        REPORT_PREVIEW_BUILD_LOG_URL: ${{ inputs.build-log-url != '' && inputs.build-log-url || format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
         REPORT_PREVIEW_ERROR: ${{ inputs.error }}
         REPORT_PREVIEW_MAX_ATTEMPTS: ${{ inputs.max-attempts }}
         REPORT_PREVIEW_BACKOFF_BASE_SECONDS: ${{ inputs.backoff-seconds }}
