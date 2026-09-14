@@ -32,6 +32,7 @@ previous one — which is how you rotate it.
 | `sha` | on a non-PR event | the event's head commit | Head commit the preview was built from, 7-64 hex chars. Inferred from `github.event.pull_request.head.sha`. |
 | `url` | on `ready` | `''` | Where the preview answers. https only, no credentials in the authority. |
 | `health-path` | no | `''` | Rooted path a health check hits under `url`, e.g. `/api/health`. Defaults to `/` at rest. |
+| `database-name` | no | `''` | The Postgres database THIS preview's app uses on the environment's preview instance, e.g. `preview_my_branch` (lower-case letters, digits, underscore). Lets Churner's agents query the pull request's own database on the preview environment. |
 | `expires-in` | no | `''` | How long the preview is expected to live — `48h`, `90m`, `7d`, `30s`. Sent as an absolute `expiresAt`. **The unit suffix is required**; see below. |
 | `build-log-url` | no | this workflow run's page | Where this attempt's build log can be read. |
 | `error` | no | `''` | Why a `failed` failed. Truncated at 2000 chars by the contract, never refused. |

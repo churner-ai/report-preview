@@ -56,6 +56,14 @@ inputs:
       credentials in the authority. Ignored by every other type.
     required: false
     default: ''
+  database-name:
+    description: >-
+      The Postgres database THIS preview's app uses on the environment's
+      preview instance (e.g. `preview_my_branch`; lower-case letters, digits
+      and underscore). Optional. Lets Churner's agents query the pull
+      request's own database on the preview environment.
+    required: false
+    default: ''
   health-path:
     description: >-
       Rooted path a health check hits under `url` (e.g. `/api/health`).
@@ -130,6 +138,7 @@ runs:
         REPORT_PREVIEW_SHA: ${{ inputs.sha != '' && inputs.sha || github.event.pull_request.head.sha }}
         REPORT_PREVIEW_URL: ${{ inputs.url }}
         REPORT_PREVIEW_HEALTH_PATH: ${{ inputs.health-path }}
+        REPORT_PREVIEW_DATABASE_NAME: ${{ inputs.database-name }}
         REPORT_PREVIEW_EXPIRES_IN: ${{ inputs.expires-in }}
         REPORT_PREVIEW_BUILD_LOG_URL: ${{ inputs.build-log-url != '' && inputs.build-log-url || format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
         REPORT_PREVIEW_ERROR: ${{ inputs.error }}
